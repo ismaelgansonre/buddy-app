@@ -7,6 +7,27 @@
         <link>https://github.com/rahamanbinujit/buddy-app</link>
         <description>Buddy app updates — AI desktop companion by Artiphik</description>
         <language>en</language>
-        <!-- Releases will be added here when publishing updates -->
+        <item>
+            <title>Version 1.0.0</title>
+            <pubDate>Sun, 12 Apr 2026 05:19:28 +0530</pubDate>
+            <sparkle:version>1</sparkle:version>
+            <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[
+                <h2>Buddy v1.0.0</h2>
+                <ul>
+                    <li>Multi-provider AI chat (Claude CLI, Claude API, OpenAI, Gemini)</li>
+                    <li>Proactive screen comments with emoji reactions</li>
+                    <li>Voice conversations with built-in speech recognition</li>
+                    <li>Focus sessions with distraction detection</li>
+                    <li>Health reminders</li>
+                </ul>
+            ]]></description>
+            <enclosure url="https://github.com/rahamanbinujit/buddy-app/releases/download/v1.0.0/Buddy.dmg"
+                       type="application/octet-stream"
+                       length="138575935"
+                       sparkle:version="1"
+                       sparkle:shortVersionString="1.0.0" />
+        </item>
     </channel>
 </rss>
