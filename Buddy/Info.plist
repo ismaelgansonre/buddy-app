@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>Buddy uses screen capture to provide context about what you're looking at when answering questions.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Buddy uses the microphone for voice conversations. Hold the character to talk.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Buddy uses speech recognition to understand what you say during voice conversations.</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.artiphik.buddy</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>buddy</string>
+            </array>
+        </dict>
+    </array>
+    <key>SUFeedURL</key>
+    <string>https://raw.githubusercontent.com/rahamanbinujit/buddy-app/main/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>6jAtV4vXAx8p55Lc8LRqPR+OoG5sejC6FtZaDGK5Jqs=</string>
+</dict>
+</plist>

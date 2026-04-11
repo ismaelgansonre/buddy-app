@@ -1,0 +1,223 @@
+#!/bin/bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BUILD_DIR="$ROOT/build"
+APP_DIR="$BUILD_DIR/Buddy.app"
+CONTENTS="$APP_DIR/Contents"
+DMG_PATH="$BUILD_DIR/Buddy.dmg"
+
+SIGN_IDENTITY="${SIGN_IDENTITY:-Developer ID Application: Your Name (TEAM_ID)}"
+TEAM_ID="${TEAM_ID:-YOUR_TEAM_ID}"
+APPLE_ID="${APPLE_ID:-your@email.com}"
+BUNDLE_ID="com.rahamanbinujit.buddy"
+
+echo "Building release binary..."
+cd "$ROOT"
+swift build -c release
+
+BINARY="$(swift build -c release --show-bin-path)/Buddy"
+if [ ! -f "$BINARY" ]; then
+    echo "Error: binary not found at $BINARY"
+    exit 1
+fi
+
+echo "Creating app bundle..."
+rm -rf "$APP_DIR"
+mkdir -p "$CONTENTS/MacOS"
+mkdir -p "$CONTENTS/Resources"
+
+cp "$BINARY" "$CONTENTS/MacOS/Buddy"
+
+VERSION="${VERSION:-1.0.0}"
+BUILD_NUMBER="${BUILD_NUMBER:-1}"
+
+cat > "$CONTENTS/Info.plist" << PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Buddy</string>
+    <key>CFBundleDisplayName</key>
+    <string>Buddy</string>
+    <key>CFBundleIdentifier</key>
+    <string>${BUNDLE_ID}</string>
+    <key>CFBundleVersion</key>
+    <string>${BUILD_NUMBER}</string>
+    <key>CFBundleShortVersionString</key>
+    <string>${VERSION}</string>
+    <key>CFBundleExecutable</key>
+    <string>Buddy</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>Buddy uses screen capture to provide context about what you're looking at when answering questions.</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>SUFeedURL</key>
+    <string>https://raw.githubusercontent.com/rahamanbinujit/buddy-app/main/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>6jAtV4vXAx8p55Lc8LRqPR+OoG5sejC6FtZaDGK5Jqs=</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.artiphik.buddy</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>buddy</string>
+            </array>
+        </dict>
+    </array>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Buddy uses the microphone for voice conversations. Hold the character to talk.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Buddy uses speech recognition to understand what you say during voice conversations.</string>
+</dict>
+</plist>
+PLIST
+
+cat > "$BUILD_DIR/Buddy.entitlements" << ENTITLEMENTS
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>
+ENTITLEMENTS
+
+RESOURCE_BUNDLE="$(swift build -c release --show-bin-path)/Buddy_Buddy.bundle"
+if [ -d "$RESOURCE_BUNDLE" ]; then
+    cp -R "$RESOURCE_BUNDLE" "$CONTENTS/Resources/"
+fi
+
+echo "Bundling whisper-cli and model..."
+WHISPER_BIN="${WHISPER_BIN:-/opt/homebrew/bin/whisper-cli}"
+WHISPER_MODEL="${WHISPER_MODEL:-$ROOT/models/ggml-base.en.bin}"
+WHISPER_LIB="${WHISPER_LIB:-/opt/homebrew/lib/libwhisper.1.dylib}"
+GGML_LIB="${GGML_LIB:-/opt/homebrew/opt/ggml/lib/libggml.0.dylib}"
+GGML_BASE_LIB="${GGML_BASE_LIB:-/opt/homebrew/opt/ggml/lib/libggml-base.0.dylib}"
+
+if [ -f "$WHISPER_BIN" ] && [ -f "$WHISPER_MODEL" ]; then
+    cp "$WHISPER_BIN" "$CONTENTS/Resources/whisper-cli"
+    chmod +x "$CONTENTS/Resources/whisper-cli"
+    cp "$WHISPER_MODEL" "$CONTENTS/Resources/ggml-base.en.bin"
+
+    # Bundle dynamic libraries
+    for lib in "$WHISPER_LIB" "$GGML_LIB" "$GGML_BASE_LIB"; do
+        if [ -f "$lib" ]; then
+            # Resolve symlinks to get the actual file
+            real_lib="$(readlink -f "$lib" 2>/dev/null || realpath "$lib" 2>/dev/null || echo "$lib")"
+            cp "$real_lib" "$CONTENTS/Frameworks/$(basename "$lib")"
+        fi
+    done
+
+    # Rewrite dylib paths so whisper-cli finds libs inside the bundle
+    install_name_tool -change "@rpath/libwhisper.1.dylib" "@loader_path/../Frameworks/libwhisper.1.dylib" "$CONTENTS/Resources/whisper-cli" 2>/dev/null || true
+    install_name_tool -change "/opt/homebrew/opt/ggml/lib/libggml.0.dylib" "@loader_path/../Frameworks/libggml.0.dylib" "$CONTENTS/Resources/whisper-cli" 2>/dev/null || true
+    install_name_tool -change "/opt/homebrew/opt/ggml/lib/libggml-base.0.dylib" "@loader_path/../Frameworks/libggml-base.0.dylib" "$CONTENTS/Resources/whisper-cli" 2>/dev/null || true
+
+    # Fix dylib install names and inter-dependencies
+    install_name_tool -id "@loader_path/libwhisper.1.dylib" "$CONTENTS/Frameworks/libwhisper.1.dylib" 2>/dev/null || true
+    install_name_tool -change "/opt/homebrew/opt/ggml/lib/libggml.0.dylib" "@loader_path/libggml.0.dylib" "$CONTENTS/Frameworks/libwhisper.1.dylib" 2>/dev/null || true
+    install_name_tool -change "/opt/homebrew/opt/ggml/lib/libggml-base.0.dylib" "@loader_path/libggml-base.0.dylib" "$CONTENTS/Frameworks/libwhisper.1.dylib" 2>/dev/null || true
+    install_name_tool -change "@rpath/libggml-base.0.dylib" "@loader_path/libggml-base.0.dylib" "$CONTENTS/Frameworks/libwhisper.1.dylib" 2>/dev/null || true
+
+    install_name_tool -id "@loader_path/libggml.0.dylib" "$CONTENTS/Frameworks/libggml.0.dylib" 2>/dev/null || true
+    install_name_tool -change "/opt/homebrew/opt/ggml/lib/libggml-base.0.dylib" "@loader_path/libggml-base.0.dylib" "$CONTENTS/Frameworks/libggml.0.dylib" 2>/dev/null || true
+    install_name_tool -change "@rpath/libggml-base.0.dylib" "@loader_path/libggml-base.0.dylib" "$CONTENTS/Frameworks/libggml.0.dylib" 2>/dev/null || true
+
+    install_name_tool -id "@loader_path/libggml-base.0.dylib" "$CONTENTS/Frameworks/libggml-base.0.dylib" 2>/dev/null || true
+
+    echo "  whisper-cli and model bundled"
+else
+    echo "  WARNING: whisper-cli or model not found, voice will not work"
+    echo "  Install: brew install whisper-cpp && download ggml-base.en.bin to models/"
+fi
+
+echo "Embedding Sparkle framework..."
+mkdir -p "$CONTENTS/Frameworks"
+SPARKLE_PATH="$(find "$ROOT/.build/artifacts" -name "Sparkle.framework" -type d | head -1)"
+if [ -n "$SPARKLE_PATH" ] && [ -d "$SPARKLE_PATH" ]; then
+    cp -R "$SPARKLE_PATH" "$CONTENTS/Frameworks/"
+fi
+
+echo "Generating app icon..."
+python3 "$ROOT/scripts/gen-icon.py"
+ICNS="$BUILD_DIR/Buddy.icns"
+if [ -f "$ICNS" ]; then
+    cp "$ICNS" "$CONTENTS/Resources/AppIcon.icns"
+fi
+
+echo "Signing with Developer ID..."
+# Sign whisper dylibs
+for dylib in "$CONTENTS/Frameworks/libwhisper.1.dylib" "$CONTENTS/Frameworks/libggml.0.dylib" "$CONTENTS/Frameworks/libggml-base.0.dylib"; do
+    [ -f "$dylib" ] && codesign --force --options runtime --sign "$SIGN_IDENTITY" "$dylib"
+done
+[ -f "$CONTENTS/Resources/whisper-cli" ] && codesign --force --options runtime --sign "$SIGN_IDENTITY" "$CONTENTS/Resources/whisper-cli"
+
+if [ -d "$CONTENTS/Frameworks/Sparkle.framework" ]; then
+    codesign --force --options runtime --sign "$SIGN_IDENTITY" "$CONTENTS/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc"
+    codesign --force --options runtime --sign "$SIGN_IDENTITY" "$CONTENTS/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc"
+    codesign --force --options runtime --sign "$SIGN_IDENTITY" "$CONTENTS/Frameworks/Sparkle.framework/Versions/B/Autoupdate"
+    codesign --force --options runtime --sign "$SIGN_IDENTITY" "$CONTENTS/Frameworks/Sparkle.framework/Versions/B/Updater.app"
+    codesign --force --options runtime --sign "$SIGN_IDENTITY" "$CONTENTS/Frameworks/Sparkle.framework"
+fi
+codesign --force --options runtime --entitlements "$BUILD_DIR/Buddy.entitlements" --sign "$SIGN_IDENTITY" "$APP_DIR"
+
+echo "Verifying signature..."
+codesign --verify --deep --strict "$APP_DIR"
+spctl --assess --type execute --verbose "$APP_DIR" || true
+
+echo "Notarizing..."
+ZIP_FOR_NOTARIZE="$BUILD_DIR/Buddy-notarize.zip"
+ditto -c -k --keepParent "$APP_DIR" "$ZIP_FOR_NOTARIZE"
+xcrun notarytool submit "$ZIP_FOR_NOTARIZE" \
+    --team-id "$TEAM_ID" \
+    --wait \
+    --apple-id "$APPLE_ID" \
+    --keychain-profile "notarytool-buddy" 2>&1 || {
+    echo ""
+    echo "If notarization fails with auth error, run this once to store credentials:"
+    echo "  xcrun notarytool store-credentials notarytool-buddy --apple-id \$APPLE_ID --team-id $TEAM_ID"
+    echo ""
+    echo "Then re-run this script."
+    rm -f "$ZIP_FOR_NOTARIZE"
+    exit 1
+}
+rm -f "$ZIP_FOR_NOTARIZE"
+
+echo "Stapling notarization ticket..."
+xcrun stapler staple "$APP_DIR"
+
+echo "Creating DMG..."
+rm -f "$DMG_PATH"
+
+create-dmg \
+    --volname "Buddy" \
+    --window-pos 200 120 \
+    --window-size 600 400 \
+    --icon-size 128 \
+    --icon "Buddy.app" 150 200 \
+    --app-drop-link 450 200 \
+    --no-internet-enable \
+    "$DMG_PATH" \
+    "$APP_DIR"
+
+echo ""
+echo "Done."
+echo "  App: $APP_DIR"
+echo "  DMG: $DMG_PATH"

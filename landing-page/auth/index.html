@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign In — Buddy</title>
+<link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Space Grotesk', -apple-system, sans-serif;
+    background: #05050F;
+    color: #F5F5FF;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+  }
+
+  .card {
+    background: #0F0F24;
+    border: 1px solid #1E1E2D;
+    border-radius: 12px;
+    padding: 40px 36px;
+    width: 100%;
+    max-width: 400px;
+    text-align: center;
+  }
+
+  .logo {
+    font-size: 32px;
+    margin-bottom: 20px;
+  }
+
+  h1 {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .subtitle {
+    color: #B0B4D0;
+    font-size: 14px;
+    margin-bottom: 28px;
+    line-height: 1.5;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    text-align: left;
+  }
+
+  .form-group label {
+    font-size: 12px;
+    font-weight: 500;
+    color: #B0B4D0;
+    margin-bottom: -6px;
+  }
+
+  input[type="email"] {
+    width: 100%;
+    padding: 12px 16px;
+    background: #131320;
+    border: 1px solid #2B2B40;
+    border-radius: 8px;
+    color: #F5F5FF;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 15px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  input::placeholder {
+    color: #555570;
+  }
+
+  input:focus {
+    border-color: #E01F1F;
+  }
+
+  .btn {
+    width: 100%;
+    padding: 12px 24px;
+    background: #E01F1F;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+    margin-top: 4px;
+  }
+
+  .btn:hover { background: #FF3B3B; }
+  .btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .status {
+    margin-top: 16px;
+    font-size: 13px;
+    min-height: 20px;
+    line-height: 1.5;
+  }
+
+  .status.success { color: #4ADE80; }
+  .status.error { color: #FF5B5B; }
+
+  .toggle {
+    margin-top: 20px;
+    font-size: 13px;
+    color: #B0B4D0;
+  }
+
+  .toggle a {
+    color: #E01F1F;
+    text-decoration: none;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .toggle a:hover {
+    color: #FF3B3B;
+  }
+
+  .footer {
+    margin-top: 28px;
+    padding-top: 20px;
+    border-top: 1px solid #1E1E2D;
+    font-size: 13px;
+    color: #555570;
+  }
+
+  .footer a {
+    color: #B0B4D0;
+    text-decoration: none;
+  }
+
+  .footer a:hover {
+    color: #F5F5FF;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <!-- Email form -->
+  <div id="form-state">
+    <div class="logo">&#x1F43E;</div>
+    <h1>Sign in to Buddy</h1>
+    <p class="subtitle">Enter your email to get a sign-in link. No password needed.</p>
+
+    <div class="form-group">
+      <label for="email">Email</label>
+      <input type="email" id="email" placeholder="you@email.com" autocomplete="email" autofocus>
+      <button class="btn" id="submit-btn" onclick="submitForm()">Send Sign-In Link</button>
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <div class="footer">
+      <a href="https://buddy.artiphik.com">&#8592; Back to buddy.artiphik.com</a>
+    </div>
+  </div>
+
+  <!-- Success state after sending link -->
+  <div id="sent-state" style="display:none;">
+    <div class="logo">&#x2709;&#xFE0F;</div>
+    <h1>Check your email</h1>
+    <p class="subtitle" id="sent-subtitle">We sent a sign-in link to <strong id="sent-email"></strong></p>
+    <p class="subtitle" style="margin-top:8px;font-size:13px;color:#777;">Click the link in your email to sign in. You can close this tab after.</p>
+
+    <div class="status" id="resend-status"></div>
+
+    <button class="btn" id="resend-btn" onclick="resendLink()" style="margin-top:20px;background:#1E1E2D;font-size:13px;">Send Again</button>
+
+    <div class="footer">
+      <a href="https://buddy.artiphik.com">&#8592; Back to buddy.artiphik.com</a>
+    </div>
+  </div>
+</div>
+
+<script>
+  const emailInput = document.getElementById('email');
+  const submitBtn = document.getElementById('submit-btn');
+  const statusEl = document.getElementById('status');
+
+  let lastEmail = '';
+
+  emailInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') submitForm();
+  });
+
+  async function sendMagicLink(email) {
+    const res = await fetch('/api/auth/magic-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    return res.json();
+  }
+
+  async function submitForm() {
+    const email = emailInput.value.trim();
+    if (!email || !email.includes('@')) {
+      statusEl.textContent = 'Please enter a valid email address.';
+      statusEl.className = 'status error';
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Sending...';
+    statusEl.textContent = '';
+    statusEl.className = 'status';
+
+    try {
+      const data = await sendMagicLink(email);
+
+      if (data.success) {
+        lastEmail = email;
+        document.getElementById('sent-email').textContent = email;
+        document.getElementById('form-state').style.display = 'none';
+        document.getElementById('sent-state').style.display = 'block';
+      } else {
+        statusEl.textContent = data.error || 'Something went wrong. Try again.';
+        statusEl.className = 'status error';
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Send Sign-In Link';
+      }
+    } catch (err) {
+      statusEl.textContent = 'Network error. Check your connection and try again.';
+      statusEl.className = 'status error';
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Send Sign-In Link';
+    }
+  }
+
+  async function resendLink() {
+    const resendBtn = document.getElementById('resend-btn');
+    const resendStatus = document.getElementById('resend-status');
+
+    resendBtn.disabled = true;
+    resendBtn.textContent = 'Sending...';
+    resendStatus.textContent = '';
+
+    try {
+      const data = await sendMagicLink(lastEmail);
+      if (data.success) {
+        resendStatus.textContent = 'Link sent again! Check your email.';
+        resendStatus.className = 'status success';
+      } else {
+        resendStatus.textContent = data.error || 'Could not resend. Try again.';
+        resendStatus.className = 'status error';
+      }
+    } catch (err) {
+      resendStatus.textContent = 'Network error. Try again.';
+      resendStatus.className = 'status error';
+    }
+
+    resendBtn.disabled = false;
+    resendBtn.textContent = 'Send Again';
+  }
+</script>
+
+</body>
+</html>

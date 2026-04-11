@@ -1,0 +1,13 @@
+.build/
+build/
+.swiftpm/
+*.xcodeproj
+xcuserdata/
+DerivedData/
+.DS_Store
+Buddy/._*
+._*
+*.dmg
+.env
+.env.local
+.env.production

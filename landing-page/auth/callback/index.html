@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Buddy — Signing In</title>
+<link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Space Grotesk', -apple-system, sans-serif;
+    background: #05050F;
+    color: #F5F5FF;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+  }
+
+  .card {
+    background: #0F0F24;
+    border: 1px solid #1E1E2D;
+    border-radius: 12px;
+    padding: 40px 36px;
+    width: 100%;
+    max-width: 420px;
+    text-align: center;
+  }
+
+  .logo { font-size: 48px; margin-bottom: 16px; }
+
+  h2 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+
+  .subtitle {
+    color: #B0B4D0;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    border: 3px solid #2B2B40;
+    border-top-color: #E01F1F;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-bottom: 16px;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .btn {
+    display: inline-block;
+    padding: 12px 28px;
+    background: #E01F1F;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .btn:hover { background: #FF3B3B; }
+
+  .fallback {
+    display: none;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid #1E1E2D;
+  }
+
+  .fallback p {
+    color: #B0B4D0;
+    font-size: 13px;
+    margin-bottom: 12px;
+    line-height: 1.5;
+  }
+
+  .state { display: none; }
+
+  .error-state .icon { font-size: 36px; margin-bottom: 16px; }
+
+  .success-check { font-size: 48px; margin-bottom: 16px; }
+
+  .features {
+    text-align: left;
+    margin: 20px 0;
+    padding: 16px 20px;
+    background: #131320;
+    border-radius: 8px;
+    border: 1px solid #1E1E2D;
+  }
+  .features li {
+    color: #B0B4D0;
+    font-size: 13px;
+    line-height: 2;
+    list-style: none;
+  }
+  .features li::before {
+    content: "\2713  ";
+    color: #4ADE80;
+    font-weight: 700;
+  }
+
+  .skip-link {
+    color: #555570;
+    font-size: 12px;
+    text-decoration: none;
+    margin-top: 12px;
+    display: inline-block;
+  }
+  .skip-link:hover { color: #B0B4D0; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <!-- Loading state -->
+  <div id="loading-state" class="state">
+    <div class="spinner"></div>
+    <h2>Signing you in...</h2>
+    <p class="subtitle">Setting up your account.</p>
+  </div>
+
+  <!-- Success — opening app -->
+  <div id="opening-state" class="state">
+    <div class="success-check">&#x1F389;</div>
+    <h2>You're all set!</h2>
+    <p class="subtitle">Opening Buddy on your desktop...</p>
+
+    <ul class="features">
+      <li>Screen-aware AI conversations</li>
+      <li>Voice chat with your desktop companion</li>
+      <li>100K free tokens daily</li>
+    </ul>
+
+    <div class="fallback" id="fallback">
+      <p>Didn't open? Make sure Buddy is installed and running.</p>
+      <a class="btn" id="manual-link" href="#">Open Buddy</a>
+    </div>
+
+    <a class="skip-link" href="https://buddy.artiphik.com">Back to website</a>
+  </div>
+
+  <!-- Error state -->
+  <div id="error-state" class="state error-state">
+    <div class="icon">&#x26A0;&#xFE0F;</div>
+    <h2>Link expired or invalid</h2>
+    <p class="subtitle" style="margin-top: 8px;">This sign-in link may have expired. Please try again from the app.</p>
+    <div style="margin-top: 20px;">
+      <a class="btn" href="https://buddy.artiphik.com">Back to website</a>
+    </div>
+  </div>
+</div>
+
+<script>
+  let accessToken = null;
+  let refreshToken = null;
+
+  // Extract tokens from URL hash (Supabase puts them there)
+  const hash = window.location.hash.substring(1);
+  const params = new URLSearchParams(hash);
+  accessToken = params.get('access_token');
+  refreshToken = params.get('refresh_token');
+
+  // Also check query params
+  const query = new URLSearchParams(window.location.search);
+  if (!accessToken && query.get('access_token')) {
+    accessToken = query.get('access_token');
+    refreshToken = query.get('refresh_token');
+  }
+
+  // Try sessionStorage
+  if (!accessToken && sessionStorage.getItem('buddy_access_token')) {
+    accessToken = sessionStorage.getItem('buddy_access_token');
+    refreshToken = sessionStorage.getItem('buddy_refresh_token');
+  }
+
+  function showState(id) {
+    document.querySelectorAll('.state').forEach(el => el.style.display = 'none');
+    document.getElementById(id).style.display = 'block';
+  }
+
+  function buildBuddyURL() {
+    return 'buddy://auth/callback?access_token=' + encodeURIComponent(accessToken) + '&refresh_token=' + encodeURIComponent(refreshToken || '');
+  }
+
+  function redirectToApp() {
+    const buddyURL = buildBuddyURL();
+    document.getElementById('manual-link').href = buddyURL;
+    showState('opening-state');
+    window.location.href = buddyURL;
+
+    // Show fallback after 3 seconds if app didn't open
+    setTimeout(function() {
+      document.getElementById('fallback').style.display = 'block';
+    }, 3000);
+  }
+
+  function init() {
+    if (!accessToken) {
+      showState('error-state');
+      return;
+    }
+
+    // Save tokens to sessionStorage
+    sessionStorage.setItem('buddy_access_token', accessToken);
+    sessionStorage.setItem('buddy_refresh_token', refreshToken || '');
+
+    showState('loading-state');
+
+    // Skip subscription check — go straight to opening the app
+    // Small delay so user sees "Signing you in..." briefly
+    setTimeout(redirectToApp, 800);
+  }
+
+  init();
+</script>
+
+</body>
+</html>
