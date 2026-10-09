@@ -1236,11 +1236,19 @@ class BuddyCharacter {
         s.onError = { [weak self] text in
             NSLog("[Session] Error: %@", text)
             self?.terminalView?.removeThinking()
+            self?.terminalView?.endStreaming()
             self?.terminalView?.appendError(text)
             self?.isStartingSession = false
             self?.isAutoComment = false
             self?.autoCommentTimeout?.invalidate()
             self?.currentStreamingText = ""
+            if self?.isVoiceTriggered == true {
+                self?.isVoiceMode = false
+                self?.isVoiceTriggered = false
+                self?.hidePreview()
+                self?.spriteRenderer?.setFrame(.idle)
+                self?.scheduleNextComment()
+            }
             if self?.session?.isRunning == false {
                 self?.session = nil
             }
