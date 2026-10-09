@@ -2,6 +2,7 @@ import Foundation
 
 class SettingsManager {
     static let shared = SettingsManager()
+    static let modelConfigChanged = Notification.Name("BuddyModelConfigChanged")
 
     struct Settings: Codable {
         var activeProvider: ModelProvider = .claudeCLI
@@ -54,6 +55,7 @@ class SettingsManager {
     }
 
     func setProvider(_ provider: ModelProvider) {
+        let previous = settings
         update { s in
             s.activeProvider = provider
             // Restore preferred model for this provider, or use default
@@ -64,14 +66,19 @@ class SettingsManager {
                 s.activeModelId = defaultModel.id
             }
         }
+        if previous.activeProvider != settings.activeProvider || previous.activeModelId != settings.activeModelId {
+            NotificationCenter.default.post(name: Self.modelConfigChanged, object: nil)
+        }
     }
 
     func setModel(_ modelId: String) {
-        guard AvailableModels.models(for: settings.activeProvider).contains(where: { $0.id == modelId }) else { return }
+        guard modelId != settings.activeModelId,
+              AvailableModels.models(for: settings.activeProvider).contains(where: { $0.id == modelId }) else { return }
         update { s in
             s.activeModelId = modelId
             s.preferredModels[s.activeProvider.rawValue] = modelId
         }
+        NotificationCenter.default.post(name: Self.modelConfigChanged, object: nil)
     }
 
     private func loadFromDisk() {
