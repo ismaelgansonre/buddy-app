@@ -6,6 +6,17 @@ enum ModelProvider: String, Codable, CaseIterable {
     case openAI
     case gemini
     case buddyProxy
+
+    var apiKeyService: String? {
+        switch self {
+        case .claudeAPI: return KeychainHelper.claudeAPIKey
+        case .openAI: return KeychainHelper.openAIAPIKey
+        case .gemini: return KeychainHelper.geminiAPIKey
+        case .claudeCLI, .buddyProxy: return nil
+        }
+    }
+
+    var requiresAPIKey: Bool { apiKeyService != nil }
 }
 
 struct ModelConfig: Codable {
