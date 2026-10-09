@@ -31,6 +31,9 @@ class BuddyCharacter {
     var session: AgentSession?
     var isStartingSession = false
     var currentStreamingText = ""
+    /// Transcript kept when the engine changes, so the conversation stays on
+    /// screen even though the new engine starts without context.
+    var carriedHistory: [ChatMessage] = []
 
     // Voice assistant
     let voice = VoiceAssistant()
@@ -211,11 +214,7 @@ class BuddyCharacter {
         NSLog("[Comment] All checks passed, capturing screenshot...")
 
         if session == nil {
-            let newSession = createAgentSession()
-            session = newSession
-            wireSession(newSession)
-            isStartingSession = true
-            newSession.start()
+            startSession()
         }
 
         ScreenContext.captureScreenshot { [weak self] screenshot in
@@ -986,11 +985,7 @@ class BuddyCharacter {
         hidePreview()
 
         if session == nil {
-            let newSession = createAgentSession()
-            session = newSession
-            wireSession(newSession)
-            isStartingSession = true
-            newSession.start()
+            startSession()
         }
 
         if popoverWindow == nil {
@@ -1123,11 +1118,7 @@ class BuddyCharacter {
         terminalView?.showThinking()
 
         if session == nil {
-            let newSession = createAgentSession()
-            session = newSession
-            wireSession(newSession)
-            isStartingSession = true
-            newSession.start()
+            startSession()
         }
 
         let sendToSession: (String?) -> Void = { [weak self] screenshot in
@@ -1142,6 +1133,17 @@ class BuddyCharacter {
     }
 
     // MARK: - Session
+
+    /// Creates a session for the engine selected in Settings and carries the
+    /// visible transcript across.
+    func startSession() {
+        let newSession = createAgentSession()
+        newSession.history = carriedHistory
+        session = newSession
+        wireSession(newSession)
+        isStartingSession = true
+        newSession.start()
+    }
 
     func wireSession(_ s: AgentSession) {
         s.onSessionReady = { [weak self] in
@@ -1277,6 +1279,9 @@ class BuddyCharacter {
     }
 
     private func resetSessionForSettingsChange() {
+        if let current = session, !current.history.isEmpty {
+            carriedHistory = current.history
+        }
         if let oldSession = session {
             oldSession.onText = nil
             oldSession.onError = nil

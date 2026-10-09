@@ -11,8 +11,17 @@ class SettingsWindow: NSWindow {
     private var modelPopup: NSPopUpButton!
     private var statusLabel: NSTextField!
 
+    // Local engines
+    private var localHeader: NSTextField!
+    private var localStatusLabel: NSTextField!
+    private var localDetailLabel: NSTextField!
+    private var localPrimaryBtn: NSButton!
+    private var endpointField: NSTextField!
+    private var endpointSaveBtn: NSButton!
+    private var endpointLabel: NSTextField!
+
+    // API key
     private var apiKeyField: NSSecureTextField!
-    private var apiKeyLabel: NSTextField!
     private var apiKeySaveBtn: NSButton!
     private var apiKeyDeleteBtn: NSButton!
     private var apiKeyProviderLabel: NSTextField!
@@ -25,12 +34,15 @@ class SettingsWindow: NSWindow {
     private var voiceSettingsBtn: NSButton!
 
     private var monitor: Any?
+    /// Models reported by the running local engines, if any were found.
+    private var discoveredModels: [LocalModelInfo] = []
+
+    private static let windowWidth: CGFloat = 440
+    private static let windowHeight: CGFloat = 660
 
     init() {
-        let W: CGFloat = 420
-        let H: CGFloat = 480
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: W, height: H),
+            contentRect: NSRect(x: 0, y: 0, width: Self.windowWidth, height: Self.windowHeight),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -42,7 +54,7 @@ class SettingsWindow: NSWindow {
         isMovableByWindowBackground = true
         center()
 
-        let outer = NSView(frame: NSRect(x: 0, y: 0, width: W, height: H))
+        let outer = NSView(frame: NSRect(x: 0, y: 0, width: Self.windowWidth, height: Self.windowHeight))
         outer.wantsLayer = true
         outer.layer?.backgroundColor = PetTheme.paper.cgColor
         outer.layer?.cornerRadius = 16
@@ -51,8 +63,9 @@ class SettingsWindow: NSWindow {
         outer.layer?.borderColor = PetTheme.milk.cgColor
         contentView = outer
 
-        buildUI(in: outer, width: W, height: H)
+        buildUI(in: outer, width: Self.windowWidth, height: Self.windowHeight)
         refreshState()
+        refreshDiscoveredModels()
     }
 
     static func show() {
@@ -65,6 +78,10 @@ class SettingsWindow: NSWindow {
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         win.installMonitor()
+    }
+
+    private var activeProvider: ModelProvider {
+        SettingsManager.shared.settings.activeProvider
     }
 
     // MARK: - Build UI
@@ -86,58 +103,70 @@ class SettingsWindow: NSWindow {
             string: "X",
             attributes: [
                 .font: PetFonts.rounded(size: 14, weight: .bold),
-                .foregroundColor: PetTheme.ink.withAlphaComponent(0.5)
+                .foregroundColor: PetTheme.ink.withAlphaComponent(0.5),
             ]
         )
         closeBtn.target = self
         closeBtn.action = #selector(closeTapped)
         outer.addSubview(closeBtn)
 
-        // MARK: Model Section
+        // MARK: Model engine
         y -= 32
-        let modelHeader = makeSectionHeader("Model")
+        let modelHeader = makeSectionHeader("Model engine")
         modelHeader.frame = NSRect(x: pad, y: y, width: W - pad * 2, height: 18)
         outer.addSubview(modelHeader)
 
-        y -= 8
-        let providers: [(ModelProvider, String)] = [
-            (.claudeCLI, "Claude CLI"),
-            (.claudeAPI, "Claude API"),
-            (.openAI, "OpenAI"),
-            (.gemini, "Gemini"),
+        // Engines on this Mac first, then the ones reached over the network.
+        let rows: [[(ModelProvider, String)]] = [
+            [
+                (.appleFoundation, "Apple"),
+                (.ollama, "Ollama"),
+                (.localServer, "Local API"),
+                (.claudeCLI, "Claude CLI"),
+            ],
+            [
+                (.claudeAPI, "Claude API"),
+                (.openAI, "OpenAI"),
+                (.gemini, "Gemini"),
+            ],
         ]
 
-        let btnW: CGFloat = 80
-        let btnH: CGFloat = 30
+        let columns = CGFloat(rows[0].count)
         let gap: CGFloat = 6
-        let totalBtnW = CGFloat(providers.count) * btnW + CGFloat(providers.count - 1) * gap
-        var bx = (W - totalBtnW) / 2
+        let btnW = (W - pad * 2 - gap * (columns - 1)) / columns
+        let btnH: CGFloat = 28
 
-        y -= btnH
-        for (provider, label) in providers {
-            let btn = NSButton(frame: NSRect(x: bx, y: y, width: btnW, height: btnH))
-            btn.isBordered = false
-            btn.wantsLayer = true
-            btn.layer?.cornerRadius = 8
-            btn.layer?.borderWidth = 1
-            btn.layer?.borderColor = PetTheme.milk.cgColor
-            btn.layer?.backgroundColor = PetTheme.milk.cgColor
-            btn.attributedTitle = NSAttributedString(
-                string: label,
-                attributes: [
-                    .font: PetFonts.rounded(size: 10, weight: .medium),
-                    .foregroundColor: PetTheme.ink,
-                ]
-            )
-            btn.target = self
-            btn.action = #selector(providerTapped(_:))
-            providerButtons[provider] = btn
-            outer.addSubview(btn)
-            bx += btnW + gap
+        y -= 8
+        for row in rows {
+            y -= btnH
+            var bx = pad
+            for (provider, label) in row {
+                let btn = NSButton(frame: NSRect(x: bx, y: y, width: btnW, height: btnH))
+                btn.isBordered = false
+                btn.wantsLayer = true
+                btn.layer?.cornerRadius = 8
+                btn.layer?.borderWidth = 1
+                btn.layer?.borderColor = PetTheme.milk.cgColor
+                btn.layer?.backgroundColor = PetTheme.milk.cgColor
+                btn.attributedTitle = NSAttributedString(
+                    string: label,
+                    attributes: [
+                        .font: PetFonts.rounded(size: 10, weight: .medium),
+                        .foregroundColor: PetTheme.ink,
+                    ]
+                )
+                btn.target = self
+                btn.action = #selector(providerTapped(_:))
+                providerButtons[provider] = btn
+                outer.addSubview(btn)
+                bx += btnW + gap
+            }
+            y -= gap
         }
+        y += gap
 
         // Model dropdown
-        y -= 38
+        y -= 34
         modelPopup = NSPopUpButton(frame: NSRect(x: pad, y: y, width: W - pad * 2, height: 28))
         modelPopup.isBordered = false
         modelPopup.wantsLayer = true
@@ -150,18 +179,65 @@ class SettingsWindow: NSWindow {
         outer.addSubview(modelPopup)
 
         // Status
-        y -= 22
+        y -= 20
         statusLabel = makeLabel("", size: 11, weight: .medium)
         statusLabel.frame = NSRect(x: pad, y: y, width: W - pad * 2, height: 16)
         outer.addSubview(statusLabel)
 
-        // MARK: API Keys Section
-        y -= 32
+        // MARK: Local AI
+        y -= 28
+        localHeader = makeSectionHeader("Local AI")
+        localHeader.frame = NSRect(x: pad, y: y, width: W - pad * 2, height: 18)
+        outer.addSubview(localHeader)
+
+        y -= 20
+        localStatusLabel = makeLabel("", size: 11, weight: .medium)
+        localStatusLabel.frame = NSRect(x: pad, y: y, width: W - pad * 2, height: 16)
+        outer.addSubview(localStatusLabel)
+
+        y -= 18
+        localDetailLabel = makeLabel("", size: 10, weight: .regular)
+        localDetailLabel.textColor = PetTheme.ink.withAlphaComponent(0.4)
+        localDetailLabel.lineBreakMode = .byWordWrapping
+        localDetailLabel.maximumNumberOfLines = 2
+        localDetailLabel.frame = NSRect(x: pad, y: y - 8, width: W - pad * 2, height: 28)
+        outer.addSubview(localDetailLabel)
+
+        // Endpoint field, used by the engines that live in another process.
+        y -= 40
+        endpointLabel = makeLabel("", size: 10, weight: .medium)
+        endpointLabel.textColor = PetTheme.ink.withAlphaComponent(0.5)
+        endpointLabel.frame = NSRect(x: pad, y: y, width: W - pad * 2, height: 14)
+        outer.addSubview(endpointLabel)
+
+        y -= 30
+        endpointField = NSTextField(frame: NSRect(x: pad, y: y, width: W - pad * 2 - 64, height: 26))
+        endpointField.isBordered = false
+        endpointField.wantsLayer = true
+        endpointField.layer?.backgroundColor = PetTheme.milk.cgColor
+        endpointField.layer?.cornerRadius = 8
+        endpointField.font = PetFonts.mono(size: 11)
+        endpointField.textColor = PetTheme.ink
+        endpointField.backgroundColor = PetTheme.milk
+        endpointField.focusRingType = .none
+        outer.addSubview(endpointField)
+
+        endpointSaveBtn = makeSmallButton("Save", action: #selector(saveEndpoint))
+        endpointSaveBtn.frame = NSRect(x: W - pad - 58, y: y, width: 58, height: 26)
+        outer.addSubview(endpointSaveBtn)
+
+        y -= 26
+        localPrimaryBtn = makeSmallButton("Refresh", action: #selector(localPrimaryTapped))
+        localPrimaryBtn.frame = NSRect(x: pad, y: y - 6, width: 130, height: 26)
+        outer.addSubview(localPrimaryBtn)
+
+        // MARK: API keys
+        y -= 46
         apiKeyHeader = makeSectionHeader("API Key")
         apiKeyHeader.frame = NSRect(x: pad, y: y, width: W - pad * 2, height: 18)
         outer.addSubview(apiKeyHeader)
 
-        y -= 22
+        y -= 20
         apiKeyProviderLabel = makeLabel("", size: 11, weight: .medium)
         apiKeyProviderLabel.textColor = PetTheme.ink.withAlphaComponent(0.5)
         apiKeyProviderLabel.frame = NSRect(x: pad, y: y, width: W - pad * 2, height: 16)
@@ -177,7 +253,6 @@ class SettingsWindow: NSWindow {
         apiKeyField.textColor = PetTheme.ink
         apiKeyField.backgroundColor = PetTheme.milk
         apiKeyField.focusRingType = .none
-        apiKeyField.placeholderString = "sk-..."
         outer.addSubview(apiKeyField)
 
         apiKeySaveBtn = makeSmallButton("Save", action: #selector(saveAPIKey))
@@ -194,8 +269,8 @@ class SettingsWindow: NSWindow {
         apiKeyHintLabel.frame = NSRect(x: pad, y: y, width: W - pad * 2, height: 14)
         outer.addSubview(apiKeyHintLabel)
 
-        // MARK: Voice Section
-        y -= 32
+        // MARK: Voice
+        y -= 30
         voiceHeader = makeSectionHeader("Voice")
         voiceHeader.frame = NSRect(x: pad, y: y, width: W - pad * 2, height: 18)
         outer.addSubview(voiceHeader)
@@ -206,7 +281,7 @@ class SettingsWindow: NSWindow {
         outer.addSubview(voiceStatusLabel)
 
         y -= 20
-        voiceHintLabel = makeLabel("Better voice: download a premium voice in System Settings > Accessibility > Spoken Content", size: 10, weight: .regular)
+        voiceHintLabel = makeLabel("", size: 10, weight: .regular)
         voiceHintLabel.textColor = PetTheme.ink.withAlphaComponent(0.35)
         voiceHintLabel.lineBreakMode = .byWordWrapping
         voiceHintLabel.maximumNumberOfLines = 2
@@ -222,120 +297,190 @@ class SettingsWindow: NSWindow {
 
     func refreshState() {
         let settings = SettingsManager.shared.settings
-        let activeProvider = settings.activeProvider
+        let provider = settings.activeProvider
 
-        // Highlight active provider
-        for (provider, btn) in providerButtons {
-            if provider == activeProvider {
-                btn.layer?.backgroundColor = PetTheme.shell.cgColor
-                btn.layer?.borderColor = PetTheme.shell.cgColor
-                btn.attributedTitle = NSAttributedString(
-                    string: btn.attributedTitle.string,
-                    attributes: [
-                        .font: PetFonts.rounded(size: 10, weight: .bold),
-                        .foregroundColor: NSColor.white,
-                    ]
-                )
-            } else {
-                btn.layer?.backgroundColor = PetTheme.milk.cgColor
-                btn.layer?.borderColor = PetTheme.milk.cgColor
-                btn.attributedTitle = NSAttributedString(
-                    string: btn.attributedTitle.string,
-                    attributes: [
-                        .font: PetFonts.rounded(size: 10, weight: .medium),
-                        .foregroundColor: PetTheme.ink,
-                    ]
-                )
+        // Highlight the active engine
+        for (candidate, btn) in providerButtons {
+            let isActive = candidate == provider
+            btn.layer?.backgroundColor = (isActive ? PetTheme.shell : PetTheme.milk).cgColor
+            btn.layer?.borderColor = (isActive ? PetTheme.shell : PetTheme.milk).cgColor
+            btn.attributedTitle = NSAttributedString(
+                string: btn.attributedTitle.string,
+                attributes: [
+                    .font: PetFonts.rounded(size: 10, weight: isActive ? .bold : .medium),
+                    .foregroundColor: isActive ? NSColor.white : PetTheme.ink,
+                ]
+            )
+        }
+
+        // Model list
+        modelPopup.removeAllItems()
+        var entries: [(id: String, title: String)] = AvailableModels.models(for: provider)
+            .map { (id: $0.id, title: $0.displayName) }
+        if provider.hasDynamicModels {
+            entries = discoveredModels.map { (id: $0.id, title: $0.displayName) }
+            if entries.isEmpty {
+                entries = [(id: "", title: "No models found — is the engine running?")]
             }
         }
-
-        // Populate model dropdown
-        modelPopup.removeAllItems()
-        let models = AvailableModels.models(for: activeProvider)
-        for model in models {
-            modelPopup.addItem(withTitle: model.displayName)
-            modelPopup.lastItem?.representedObject = model.id
+        for entry in entries {
+            modelPopup.addItem(withTitle: entry.title)
+            modelPopup.lastItem?.representedObject = entry.id
         }
-        if let idx = models.firstIndex(where: { $0.id == settings.activeModelId }) {
-            modelPopup.selectItem(at: idx)
+        if let index = entries.firstIndex(where: { $0.id == settings.activeModelId }) {
+            modelPopup.selectItem(at: index)
         }
 
-        // Status indicator
-        switch activeProvider {
+        refreshStatus(provider: provider, settings: settings)
+        refreshLocalSection(provider: provider, settings: settings)
+        refreshAPIKeySection(provider: provider)
+        refreshVoiceSection()
+    }
+
+    private func refreshStatus(provider: ModelProvider, settings: SettingsManager.Settings) {
+        let okColor = NSColor(red: 0.3, green: 0.75, blue: 0.45, alpha: 1)
+        let warnColor = NSColor(red: 0.85, green: 0.35, blue: 0.3, alpha: 1)
+
+        switch provider {
+        case .appleFoundation:
+            let availability = AppleIntelligence.availability()
+            statusLabel.stringValue = availability.message
+            statusLabel.textColor = availability.isAvailable ? okColor : warnColor
+
+        case .ollama:
+            statusLabel.stringValue = settings.activeModelId.isEmpty
+                ? "Start Ollama and pick a model"
+                : "Local model: \(settings.activeModelId)"
+            statusLabel.textColor = settings.activeModelId.isEmpty
+                ? PetTheme.ink.withAlphaComponent(0.5) : okColor
+
+        case .localServer:
+            statusLabel.stringValue = settings.activeModelId.isEmpty
+                ? "Start your local server and pick a model"
+                : "Local model: \(settings.activeModelId)"
+            statusLabel.textColor = settings.activeModelId.isEmpty
+                ? PetTheme.ink.withAlphaComponent(0.5) : okColor
+
         case .claudeCLI:
-            let cliPaths = [
+            let paths = [
                 "/usr/local/bin/claude",
                 "/opt/homebrew/bin/claude",
                 "\(NSHomeDirectory())/.local/bin/claude",
                 "\(NSHomeDirectory())/.claude/local/claude",
             ]
-            let cliFound = cliPaths.contains { FileManager.default.isExecutableFile(atPath: $0) }
-            if cliFound {
-                statusLabel.stringValue = "Claude CLI detected"
-                statusLabel.textColor = NSColor(red: 0.3, green: 0.75, blue: 0.45, alpha: 1)
-            } else {
-                statusLabel.stringValue = "Claude CLI not found — install it first"
-                statusLabel.textColor = NSColor(red: 0.85, green: 0.35, blue: 0.3, alpha: 1)
+            let found = paths.contains { FileManager.default.isExecutableFile(atPath: $0) }
+            statusLabel.stringValue = found ? "Claude CLI detected" : "Claude CLI not found — install it first"
+            statusLabel.textColor = found ? okColor : warnColor
+
+        case .claudeAPI, .openAI, .gemini:
+            let hasKey = KeychainHelper.apiKey(for: provider) != nil
+            let name: String
+            switch provider {
+            case .claudeAPI: name = "Anthropic"
+            case .openAI: name = "OpenAI"
+            default: name = "Google AI"
             }
-        case .claudeAPI:
-            let hasKey = KeychainHelper.apiKey(for: .claudeAPI) != nil
-            statusLabel.stringValue = hasKey ? "API key saved" : "Add your Anthropic API key"
-            statusLabel.textColor = hasKey
-                ? NSColor(red: 0.3, green: 0.75, blue: 0.45, alpha: 1)
-                : PetTheme.ink.withAlphaComponent(0.5)
-        case .openAI:
-            let hasKey = KeychainHelper.apiKey(for: .openAI) != nil
-            statusLabel.stringValue = hasKey ? "API key saved" : "Add your OpenAI API key"
-            statusLabel.textColor = hasKey
-                ? NSColor(red: 0.3, green: 0.75, blue: 0.45, alpha: 1)
-                : PetTheme.ink.withAlphaComponent(0.5)
-        case .gemini:
-            let hasKey = KeychainHelper.apiKey(for: .gemini) != nil
-            statusLabel.stringValue = hasKey ? "API key saved" : "Add your Google AI API key"
-            statusLabel.textColor = hasKey
-                ? NSColor(red: 0.3, green: 0.75, blue: 0.45, alpha: 1)
-                : PetTheme.ink.withAlphaComponent(0.5)
+            statusLabel.stringValue = hasKey ? "API key saved" : "Add your \(name) API key"
+            statusLabel.textColor = hasKey ? okColor : PetTheme.ink.withAlphaComponent(0.5)
+
         case .buddyProxy:
-            statusLabel.stringValue = "Select a provider above"
+            statusLabel.stringValue = "Buddy subscription proxy"
             statusLabel.textColor = PetTheme.ink.withAlphaComponent(0.5)
         }
+    }
 
-        // API key section — visible for providers that need a key
-        let needsKey = activeProvider.requiresAPIKey
+    /// Everything that only concerns engines running on this Mac.
+    private func refreshLocalSection(provider: ModelProvider, settings: SettingsManager.Settings) {
+        let showsLocal = provider.isLocal
+        localHeader.isHidden = !showsLocal
+        localStatusLabel.isHidden = !showsLocal
+        localDetailLabel.isHidden = !showsLocal
+        localPrimaryBtn.isHidden = !showsLocal
+        let showsEndpoint = provider == .ollama || provider == .localServer
+        endpointField.isHidden = !showsEndpoint
+        endpointSaveBtn.isHidden = !showsEndpoint
+        endpointLabel.isHidden = !showsEndpoint
+        guard showsLocal else { return }
+
+        switch provider {
+        case .appleFoundation:
+            let availability = AppleIntelligence.availability()
+            localStatusLabel.stringValue = availability.message
+            localStatusLabel.textColor = availability.isAvailable
+                ? NSColor(red: 0.3, green: 0.75, blue: 0.45, alpha: 1)
+                : NSColor(red: 0.85, green: 0.35, blue: 0.3, alpha: 1)
+            localDetailLabel.stringValue = availability.isAvailable
+                ? "Chats stay on this Mac. No account, no API key."
+                : "Buddy needs Apple Intelligence enabled in System Settings."
+            localPrimaryBtn.isHidden = !availability.canOpenSettings
+            localPrimaryBtn.title = "System Settings"
+
+        case .ollama:
+            endpointLabel.stringValue = "Ollama address"
+            if firstResponder !== endpointField {
+                endpointField.stringValue = settings.ollamaBaseURL
+            }
+            localStatusLabel.stringValue = "Ollama on this Mac"
+            localStatusLabel.textColor = PetTheme.ink
+            localDetailLabel.stringValue = discoveredModels.isEmpty
+                ? "No models answered at this address. Start Ollama with a model pulled."
+                : "\(discoveredModels.count) model(s) available. Requests stay on this Mac."
+            localPrimaryBtn.isHidden = false
+            localPrimaryBtn.title = "Refresh models"
+
+        case .localServer:
+            endpointLabel.stringValue = "Server address (OpenAI compatible)"
+            if firstResponder !== endpointField {
+                endpointField.stringValue = settings.localServerBaseURL
+            }
+            localStatusLabel.stringValue = "Local server on this Mac"
+            localStatusLabel.textColor = PetTheme.ink
+            localDetailLabel.stringValue = discoveredModels.isEmpty
+                ? "No models answered at this address. Start LM Studio or llama.cpp first."
+                : "\(discoveredModels.count) model(s) available. Requests stay on this Mac."
+            localPrimaryBtn.isHidden = false
+            localPrimaryBtn.title = "Refresh models"
+
+        default:
+            break
+        }
+    }
+
+    private func refreshAPIKeySection(provider: ModelProvider) {
+        let needsKey = provider.requiresAPIKey
         apiKeyHeader.isHidden = !needsKey
         apiKeyField.isHidden = !needsKey
         apiKeySaveBtn.isHidden = !needsKey
-        apiKeyDeleteBtn.isHidden = !needsKey
         apiKeyProviderLabel.isHidden = !needsKey
         apiKeyHintLabel.isHidden = !needsKey
+        apiKeyDeleteBtn.isHidden = true
+        guard needsKey else { return }
 
-        if needsKey {
-            let hasKey = KeychainHelper.apiKey(for: activeProvider) != nil
-            apiKeyDeleteBtn.isHidden = !hasKey
+        let hasKey = KeychainHelper.apiKey(for: provider) != nil
+        apiKeyDeleteBtn.isHidden = !hasKey
 
-            switch activeProvider {
-            case .claudeAPI:
-                apiKeyProviderLabel.stringValue = "Anthropic API Key"
-                apiKeyField.placeholderString = "sk-ant-..."
-                apiKeyHintLabel.stringValue = "Get one at console.anthropic.com"
-            case .openAI:
-                apiKeyProviderLabel.stringValue = "OpenAI API Key"
-                apiKeyField.placeholderString = "sk-..."
-                apiKeyHintLabel.stringValue = "Get one at platform.openai.com"
-            case .gemini:
-                apiKeyProviderLabel.stringValue = "Google AI API Key"
-                apiKeyField.placeholderString = "AIza..."
-                apiKeyHintLabel.stringValue = "Get one free at aistudio.google.com"
-            default: break
-            }
+        switch provider {
+        case .claudeAPI:
+            apiKeyProviderLabel.stringValue = "Anthropic API Key"
+            apiKeyField.placeholderString = "sk-ant-..."
+            apiKeyHintLabel.stringValue = "Get one at console.anthropic.com"
+        case .openAI:
+            apiKeyProviderLabel.stringValue = "OpenAI API Key"
+            apiKeyField.placeholderString = "sk-..."
+            apiKeyHintLabel.stringValue = "Get one at platform.openai.com"
+        case .gemini:
+            apiKeyProviderLabel.stringValue = "Google AI API Key"
+            apiKeyField.placeholderString = "AIza..."
+            apiKeyHintLabel.stringValue = "Get one free at aistudio.google.com"
+        default:
+            break
         }
+    }
 
-        // Voice status
+    private func refreshVoiceSection() {
         let whisperPath = Bundle.main.path(forResource: "whisper-cli", ofType: nil)
         let modelPath = Bundle.main.path(forResource: "ggml-base.en", ofType: "bin")
-        let whisperReady = whisperPath != nil && modelPath != nil
-        // Also check fallback paths (for dev builds)
-        let whisperAvailable = whisperReady
+        let whisperAvailable = (whisperPath != nil && modelPath != nil)
             || FileManager.default.fileExists(atPath: "/opt/homebrew/bin/whisper-cli")
 
         if whisperAvailable {
@@ -346,7 +491,6 @@ class SettingsWindow: NSWindow {
             voiceStatusLabel.textColor = NSColor(red: 0.85, green: 0.35, blue: 0.3, alpha: 1)
         }
 
-        // Check if a premium voice is available
         let hasPremium = AVSpeechSynthesisVoice(identifier: "com.apple.voice.premium.en-US.Zoe") != nil
             || AVSpeechSynthesisVoice(identifier: "com.apple.voice.enhanced.en-US.Samantha") != nil
         if hasPremium {
@@ -354,9 +498,48 @@ class SettingsWindow: NSWindow {
             voiceHintLabel.textColor = NSColor(red: 0.3, green: 0.75, blue: 0.45, alpha: 1)
             voiceSettingsBtn.isHidden = true
         } else {
-            voiceHintLabel.stringValue = "Tip: download a premium voice in System Settings > Accessibility > Spoken Content for better output"
+            voiceHintLabel.stringValue =
+                "Tip: download a premium voice in System Settings > Accessibility > Spoken Content for better output"
             voiceHintLabel.textColor = PetTheme.ink.withAlphaComponent(0.35)
             voiceSettingsBtn.isHidden = false
+        }
+    }
+
+    /// Asks the local engines which models they serve.
+    private func refreshDiscoveredModels() {
+        let provider = activeProvider
+        guard provider.hasDynamicModels else {
+            discoveredModels = []
+            return
+        }
+
+        let completion: (Result<[LocalModelInfo], Error>) -> Void = { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let models):
+                self.discoveredModels = models
+                // Adopt the first model when nothing valid is selected yet.
+                let current = SettingsManager.shared.settings.activeModelId
+                if models.isEmpty {
+                    // Keep whatever was chosen; the engine is simply not running.
+                } else if !models.contains(where: { $0.id == current }),
+                    let first = models.first
+                {
+                    SettingsManager.shared.setModel(first.id)
+                }
+            case .failure:
+                self.discoveredModels = []
+            }
+            self.refreshState()
+        }
+
+        switch provider {
+        case .ollama:
+            LocalModelDiscovery.listOllama(completion: completion)
+        case .localServer:
+            LocalModelDiscovery.listOpenAICompatible(completion: completion)
+        default:
+            break
         }
     }
 
@@ -366,39 +549,82 @@ class SettingsWindow: NSWindow {
         guard let provider = providerButtons.first(where: { $0.value == sender })?.key else { return }
         apiKeyField.stringValue = ""
         SettingsManager.shared.setProvider(provider)
+        discoveredModels = []
         refreshState()
+        refreshDiscoveredModels()
     }
 
     @objc private func modelChanged(_ sender: NSPopUpButton) {
-        guard let modelId = sender.selectedItem?.representedObject as? String else { return }
+        guard let modelId = sender.selectedItem?.representedObject as? String, !modelId.isEmpty else { return }
         SettingsManager.shared.setModel(modelId)
         refreshState()
+    }
+
+    /// Download, cancel or refresh, depending on the selected engine.
+    @objc private func localPrimaryTapped() {
+        let provider = activeProvider
+        let modelId = SettingsManager.shared.settings.activeModelId
+
+        switch provider {
+        case .appleFoundation:
+            AppleIntelligence.openSystemSettings()
+        case .ollama, .localServer:
+            LocalModelDiscovery.invalidateCaches()
+            refreshDiscoveredModels()
+        default:
+            break
+        }
+    }
+
+    @objc private func saveEndpoint() {
+        let provider = activeProvider
+        let raw = endpointField.stringValue
+        let fallback = provider == .ollama ? LocalAI.ollamaDefaultBaseURL : LocalAI.localServerDefaultBaseURL
+
+        guard let url = LocalAI.normalizedBaseURL(raw, fallback: fallback) else {
+            localDetailLabel.stringValue = LocalAI.nonLoopbackMessage
+            localDetailLabel.textColor = NSColor(red: 0.85, green: 0.35, blue: 0.3, alpha: 1)
+            return
+        }
+        localDetailLabel.textColor = PetTheme.ink.withAlphaComponent(0.4)
+
+        switch provider {
+        case .ollama:
+            SettingsManager.shared.setOllamaBaseURL(url.absoluteString)
+        case .localServer:
+            SettingsManager.shared.setLocalServerBaseURL(url.absoluteString)
+        default:
+            break
+        }
+        LocalModelDiscovery.invalidateCaches()
+        discoveredModels = []
+        refreshState()
+        refreshDiscoveredModels()
     }
 
     @objc private func saveAPIKey() {
         let key = apiKeyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { return }
-        let provider = SettingsManager.shared.settings.activeProvider
+        let provider = activeProvider
         guard KeychainHelper.saveAPIKey(key, for: provider) else {
             apiKeyHintLabel.stringValue = "Could not save the API key. Try again."
             return
         }
-        NotificationCenter.default.post(name: SettingsManager.modelConfigChanged, object: nil)
         apiKeyField.stringValue = ""
         refreshState()
         apiKeyHintLabel.stringValue = "API key saved."
+        NotificationCenter.default.post(name: SettingsManager.modelConfigChanged, object: nil)
     }
 
     @objc private func deleteAPIKey() {
-        let provider = SettingsManager.shared.settings.activeProvider
+        let provider = activeProvider
         guard KeychainHelper.deleteAPIKey(for: provider) else {
-            apiKeyHintLabel.stringValue = "Could not delete the API key. Try again."
+            apiKeyHintLabel.stringValue = "Could not remove the API key. Try again."
             return
         }
-        NotificationCenter.default.post(name: SettingsManager.modelConfigChanged, object: nil)
         apiKeyField.stringValue = ""
         refreshState()
-        apiKeyHintLabel.stringValue = "API key deleted."
+        apiKeyHintLabel.stringValue = "API key removed."
     }
 
     @objc private func openVoiceSettings() {
