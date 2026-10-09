@@ -31,7 +31,7 @@ Auto-updates are built in. Once installed, Buddy will notify you when new versio
 
 **AI Chat**
 - Click the character or press `Cmd+Shift+Space` to open chat
-- Bring your own API key (Anthropic, OpenAI, or Google Gemini)
+- Runs on models that live on your Mac, or on an API key you provide
 - Works with Claude CLI if you have it installed
 - Voice conversations (hold the character to talk)
 - Screenshot context -- Buddy can see what you're looking at when answering questions
@@ -48,6 +48,7 @@ Auto-updates are built in. Once installed, Buddy will notify you when new versio
 - Stuck detector -- notices when you've been on the same thing too long
 
 **Privacy**
+- Every engine that runs on this Mac is the default: no account, no API key, nothing sent anywhere
 - All API keys are stored in your macOS Keychain -- never sent anywhere
 - No accounts, no sign-ups, no telemetry
 - Direct API calls to your chosen provider -- no middleman server
@@ -55,21 +56,30 @@ Auto-updates are built in. Once installed, Buddy will notify you when new versio
 
 ## AI Providers
 
-Buddy supports multiple AI providers. Choose one in Settings:
+Buddy runs on a model that lives on your Mac by default. You can switch engines at any time in Settings:
 
 | Provider | Setup | Models |
 |----------|-------|--------|
+| **Apple Intelligence** | macOS 26+ with Apple Intelligence enabled. Nothing to install | Apple's on-device foundation model |
+| **Ollama** | Install [Ollama](https://ollama.com) and pull a model | Whatever Ollama serves on `127.0.0.1:11434` |
+| **Local server** | Run LM Studio or `llama-server` on this Mac | Whatever the server serves on `127.0.0.1:1234/v1` |
 | **Claude CLI** | Install [Claude CLI](https://docs.anthropic.com/en/docs/claude-cli) | Uses your CLI config |
 | **Claude API** | Add your API key from [console.anthropic.com](https://console.anthropic.com) | Sonnet 4, Haiku 4.5 |
 | **OpenAI** | Add your API key from [platform.openai.com](https://platform.openai.com) | GPT-4o, GPT-4.1, and Mini variants |
 | **Gemini** | Add your free API key from [aistudio.google.com](https://aistudio.google.com) | Gemini 2.5 Pro, Gemini 2.5 Flash |
 
-If Claude CLI is detected on your system, Buddy uses it automatically. Otherwise, it defaults to Gemini (free API keys available from Google AI Studio).
+A fresh install starts on Apple Intelligence. If it is unavailable, Buddy says so in Settings and you can pick another engine; it never switches provider on its own.
+
+Ollama and the local server are only ever contacted on loopback addresses (`127.0.0.1`, `localhost`, `::1`).
+
+### Screen context
+
+Models that can see images are handed the screenshot directly. Models that only take text get the on-screen text instead, read locally with Vision.
 
 ## Requirements
 
 - macOS 13+
-- One of: Claude CLI installed, or an API key from Anthropic / OpenAI / Google
+- macOS 26+ with Apple Intelligence for the on-device Apple model, or Ollama, or a local OpenAI-compatible server, or an API key from Anthropic / OpenAI / Google
 
 ## Permissions
 
@@ -106,7 +116,12 @@ buddy-app/
     ChatView.swift           # Chat UI
     SettingsWindow.swift     # Settings panel
     ModelProvider.swift      # AI provider definitions
-    AgentProvider.swift      # Session factory (CLI, API, Gemini, OpenAI)
+    AgentProvider.swift      # Session factory (local engines, CLI, APIs)
+    AppleIntelligence.swift  # Apple's on-device model (Foundation Models)
+    OllamaSession.swift      # Ollama on this Mac (streaming)
+    LocalServerSession.swift # OpenAI-compatible local server (streaming)
+    LocalAI.swift            # Endpoint rules, OCR fallback, image scaling
+    LocalModelDiscovery.swift # Model lists reported by local engines
     ClaudeSession.swift      # Claude CLI integration
     ClaudeAPISession.swift   # Anthropic API (streaming)
     OpenAISession.swift      # OpenAI API (streaming)
